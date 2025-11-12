@@ -128,6 +128,13 @@ def ssim(
     Returns:
         torch.Tensor: ssim results
     """
+    orig_device = X.device
+    if X.is_cuda or Y.is_cuda:
+        X = X.detach().cpu()
+        Y = Y.detach().cpu()
+        if win is not None:
+            win = win.detach().cpu()
+
     if not X.shape == Y.shape:
         raise ValueError("Input images should have the same dimensions.")
 
@@ -150,15 +157,15 @@ def ssim(
     if win is None:
         win = _fspecial_gauss_1d(win_size, win_sigma)
         win = win.repeat([X.shape[1]] + [1] * (len(X.shape) - 1))
+    else:
+        win = win.to(dtype=X.dtype)
 
     ssim_per_channel, cs = _ssim(X, Y, data_range=data_range, win=win, size_average=False, K=K)
     if nonnegative_ssim:
         ssim_per_channel = torch.relu(ssim_per_channel)
 
-    if size_average:
-        return ssim_per_channel.mean()
-    else:
-        return ssim_per_channel.mean(1)
+    result = ssim_per_channel.mean() if size_average else ssim_per_channel.mean(1)
+    return result.to(orig_device) if orig_device.type == "cuda" else result
 
 
 def ms_ssim(
@@ -179,6 +186,13 @@ def ms_ssim(
     Returns:
         torch.Tensor: ms-ssim results
     """
+    orig_device = X.device
+    if X.is_cuda or Y.is_cuda:
+        X = X.detach().cpu()
+        Y = Y.detach().cpu()
+        if win is not None:
+            win = win.detach().cpu()
+
     if not X.shape == Y.shape:
         raise ValueError("Input images should have the same dimensions.")
 
@@ -209,11 +223,13 @@ def ms_ssim(
 
     if weights is None:
         weights = [0.0448, 0.2856, 0.3001, 0.2363, 0.1333]
-    weights = torch.FloatTensor(weights).to(X.device, dtype=X.dtype)
+    weights = torch.tensor(weights, dtype=X.dtype, device=X.device)
 
     if win is None:
         win = _fspecial_gauss_1d(win_size, win_sigma)
         win = win.repeat([X.shape[1]] + [1] * (len(X.shape) - 1))
+    else:
+        win = win.to(dtype=X.dtype)
 
     levels = weights.shape[0]
     mcs = []
@@ -227,13 +243,11 @@ def ms_ssim(
             Y = avg_pool(Y, kernel_size=2, padding=padding)
 
     ssim_per_channel = torch.relu(ssim_per_channel)  # (batch, channel)
-    mcs_and_ssim = torch.stack(mcs + [ssim_per_channel], dim=0)  # (level, batch, channel)
-    ms_ssim_val = torch.prod(mcs_and_ssim ** weights.view(-1, 1, 1), dim=0)
+    mcs_and_ssim = torch.stack(mcs + [ssim_per_channel], dim=0).cpu()  # (level, batch, channel)
+    ms_ssim_val = torch.prod(mcs_and_ssim ** weights.cpu().view(-1, 1, 1), dim=0)
 
-    if size_average:
-        return ms_ssim_val.mean()
-    else:
-        return ms_ssim_val.mean(1)
+    result = ms_ssim_val.mean() if size_average else ms_ssim_val.mean(1)
+    return result.to(orig_device) if orig_device.type == "cuda" else result
 
 
 class SSIM(torch.nn.Module):

@@ -35,11 +35,7 @@ The generator is trained to achieve realistic and not exact reconstruction. It m
 
 ## Usage
 
-* Install Pytorch nightly and dependencies from [https://pytorch.org/](https://pytorch.org/). Then install other requirements:
-
-```bash
-pip install -r requirements.txt
-```
+- Please refer to the [INSTALL.md](./INSTALL.md) file for installation guide.
 
 * Clone this repository, `cd` in:
 

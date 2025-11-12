@@ -101,8 +101,7 @@ class LowerBoundToward(torch.autograd.Function):
 
 def standardized_CDF_gaussian(value):
     # Gaussian
-    # return 0.5 * (1. + torch.erf(value/ np.sqrt(2)))
-    return 0.5 * torch.erfc(value * (-1./np.sqrt(2)))
+    return 0.5 * (1. + torch.erf(value / np.sqrt(2)))
 
 def standardized_CDF_logistic(value):
     # Logistic

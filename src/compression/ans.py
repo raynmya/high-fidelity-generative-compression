@@ -56,21 +56,28 @@ def push(x, starts, freqs, precisions):
         precision:  Determines normalization factor of probability distribution.
     """
     head, tail = x
+    head = np.asarray(head, dtype=np.uint64)
+    starts = np.asarray(starts, dtype=np.uint64)
+    freqs = np.asarray(freqs, dtype=np.uint64)
+    precisions = np.asarray(precisions, dtype=np.uint32)
     assert head.shape == starts.shape == freqs.shape, (
         f"Inconsistent encoder shapes! head: {head.shape} | "
         f"starts: {starts.shape} | freqs: {freqs.shape}")
     
     # 32-bit Renormalization - restrict symbols to pre-images
-    x_max = ((RANS_L >> precisions) << 32) * freqs
+    norm = np.right_shift(np.uint64(RANS_L), precisions.astype(np.uint64))
+    x_max = (norm << np.uint64(32)) * freqs
     idxs = head >= x_max
 
     if np.any(idxs) > 0:
         # Push lower order bits of message onto message stack
-        tail = stack_extend(tail, np.uint32(head[idxs]))  # Can also modulo with bitand
+        lower = np.bitwise_and(head[idxs], np.uint64(0xFFFFFFFF))
+        tail = stack_extend(tail, lower.astype(np.uint32, copy=False))
         head = np.copy(head)  # Ensure no side-effects
         head[idxs] >>= 32
     head_div_freqs, head_mod_freqs = np.divmod(head, freqs)
-    return (head_div_freqs << np.uint(precisions)) + head_mod_freqs + starts, tail
+    shifts = precisions.astype(np.uint64)
+    return (head_div_freqs << shifts) + head_mod_freqs + starts, tail
 
 def pop(x, precisions):
     head_, tail_ = x

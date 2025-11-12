@@ -22,6 +22,11 @@ SCALE_MAX = 0.95
 DATASETS_DICT = {"openimages": "OpenImages", "cityscapes": "CityScapes", 
                  "jetimages": "JetImages", "evaluation": "Evaluation"}
 DATASETS = list(DATASETS_DICT.keys())
+_RESAMPLE_LANCZOS = (
+    PIL.Image.Resampling.LANCZOS
+    if hasattr(PIL.Image, "Resampling")
+    else PIL.Image.LANCZOS
+)
 
 def get_dataset(dataset):
     """Return the correct dataset."""
@@ -319,7 +324,7 @@ def preprocess(root, size=(64, 64), img_format='JPEG', center_crop=None):
         width, height = img.size
 
         if size is not None and width != size[1] or height != size[0]:
-            img = img.resize(size, PIL.Image.ANTIALIAS)
+            img = img.resize(size, resample=_RESAMPLE_LANCZOS)
 
         if center_crop is not None:
             new_width, new_height = center_crop
