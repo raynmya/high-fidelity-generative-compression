@@ -1,0 +1,95 @@
+import os
+import torch
+import numpy as np
+from tqdm import tqdm
+
+from src.helpers import utils, datasets
+from default_config import mse_lpips_args, hific_args, ModelTypes
+
+import lpips
+import torchvision
+
+def compute_psnr(x, y):
+    mse = torch.mean((x - y) ** 2)
+    return 20 * torch.log10(1.0 / torch.sqrt(mse))
+
+def evaluate(args, model, test_loader, device):
+    model.eval()
+    lpips_model = lpips.LPIPS(net='vgg').to(device)
+
+    all_psnr = []
+    all_msssim = []
+    all_lpips = []
+    all_bpp = []
+
+    with torch.no_grad():
+        for data, bpp_gt in tqdm(test_loader, desc="Evaluating"):
+            data = data.to(device)
+
+            losses, intermediates = model(data, return_intermediates=True)
+
+            x = intermediates.input_image
+            x_hat = intermediates.reconstruction
+
+            # Compute metrics
+            psnr = compute_psnr(x_hat, x).item()
+            msssim = utils.ms_ssim(x_hat, x).item()
+            lp = lpips_model(x_hat, x).mean().item()
+            bpp_val = losses["bpp_loss"].item() if "bpp_loss" in losses else losses["compression"].item()
+
+            all_psnr.append(psnr)
+            all_msssim.append(msssim)
+            all_lpips.append(lp)
+            all_bpp.append(bpp_val)
+
+    return {
+        "PSNR": np.mean(all_psnr),
+        "MS-SSIM": np.mean(all_msssim),
+        "LPIPS": np.mean(all_lpips),
+        "BPP": np.mean(all_bpp)
+    }
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-ckpt", "--ckpt", required=True, help="Path to trained model checkpoint")
+    parser.add_argument("-dataset", "--dataset", default="kodak", help="Test dataset name")
+    parser.add_argument("-dataset_path", "--dataset_path", required=True)
+    parser.add_argument("-gpu", "--gpu", type=int, default=0)
+    parser.add_argument("-model_type", "--model_type", default=ModelTypes.COMPRESSION)
+    args = parser.parse_args()
+
+    torch.cuda.set_device(args.gpu)
+    device = torch.device("cuda")
+
+    # Load default config
+    base_args = mse_lpips_args if args.model_type == ModelTypes.COMPRESSION else hific_args
+
+    # Merge CLI args
+    def dictify(x): return dict((n, getattr(x, n)) for n in dir(x) if not n.startswith("__"))
+    args_d = dictify(base_args)
+    args_d.update(vars(args))
+    args = utils.Struct(**args_d)
+
+    # Load model
+    args, model, _ = utils.load_model(args.ckpt, logger=None, device=device,
+                                      model_type=args.model_type,
+                                      current_args_d=dictify(args),
+                                      strict=False,
+                                      prediction=True)
+
+    # Load test dataset
+    test_loader = datasets.get_dataloaders(args.dataset,
+        root=args.dataset_path,
+        batch_size=1,
+        shuffle=False,
+        mode="validation",
+        normalize=True,
+        logger=None)
+
+    metrics = evaluate(args, model, test_loader, device)
+
+    print("\n=== Evaluation Metrics ===")
+    for k, v in metrics.items():
+        print(f"{k}: {v:.4f}")
